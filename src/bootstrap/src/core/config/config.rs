@@ -6,6 +6,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Display};
+use std::hash::Hash;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf, absolute};
 use std::process::Command;
@@ -701,6 +702,7 @@ pub(crate) struct TomlConfig {
     target: Option<HashMap<String, TomlTarget>>,
     dist: Option<Dist>,
     profile: Option<String>,
+    include: Option<Vec<PathBuf>>,
 }
 
 /// This enum is used for deserializing change IDs from TOML, allowing both numeric values and the string `"ignore"`.
@@ -747,27 +749,35 @@ enum ReplaceOpt {
 }
 
 trait Merge {
-    fn merge(&mut self, other: Self, replace: ReplaceOpt);
+    fn merge(
+        &mut self,
+        parent_config_path: Option<PathBuf>,
+        included_extensions: &mut HashSet<PathBuf>,
+        other: Self,
+        replace: ReplaceOpt,
+    );
 }
 
 impl Merge for TomlConfig {
     fn merge(
         &mut self,
-        TomlConfig { build, install, llvm, gcc, rust, dist, target, profile, change_id }: Self,
+        parent_config_path: Option<PathBuf>,
+        included_extensions: &mut HashSet<PathBuf>,
+        TomlConfig { build, install, llvm, gcc, rust, dist, target, profile, change_id, include }: Self,
         replace: ReplaceOpt,
     ) {
         fn do_merge<T: Merge>(x: &mut Option<T>, y: Option<T>, replace: ReplaceOpt) {
             if let Some(new) = y {
                 if let Some(original) = x {
-                    original.merge(new, replace);
+                    original.merge(None, &mut Default::default(), new, replace);
                 } else {
                     *x = Some(new);
                 }
             }
         }
 
-        self.change_id.inner.merge(change_id.inner, replace);
-        self.profile.merge(profile, replace);
+        self.change_id.inner.merge(None, &mut Default::default(), change_id.inner, replace);
+        self.profile.merge(None, &mut Default::default(), profile, replace);
 
         do_merge(&mut self.build, build, replace);
         do_merge(&mut self.install, install, replace);
@@ -782,12 +792,49 @@ impl Merge for TomlConfig {
             (Some(original_target), Some(new_target)) => {
                 for (triple, new) in new_target {
                     if let Some(original) = original_target.get_mut(&triple) {
-                        original.merge(new, replace);
+                        original.merge(None, &mut Default::default(), new, replace);
                     } else {
                         original_target.insert(triple, new);
                     }
                 }
             }
+        }
+
+        let parent_dir = parent_config_path
+            .as_ref()
+            .and_then(|p| p.parent().map(ToOwned::to_owned))
+            .unwrap_or_default();
+
+        // `include` handled later since we ignore duplicates using `ReplaceOpt::IgnoreDuplicate` to
+        // keep the upper-level configuration to take precedence.
+        for include_path in include.clone().unwrap_or_default().iter().rev() {
+            let include_path = parent_dir.join(include_path);
+            let include_path = include_path.canonicalize().unwrap_or_else(|e| {
+                eprintln!("ERROR: Failed to canonicalize '{}' path: {e}", include_path.display());
+                exit!(2);
+            });
+
+            let included_toml = Config::get_toml_inner(&include_path).unwrap_or_else(|e| {
+                eprintln!("ERROR: Failed to parse '{}': {e}", include_path.display());
+                exit!(2);
+            });
+
+            assert!(
+                included_extensions.insert(include_path.clone()),
+                "Cyclic inclusion detected: '{}' is being included again before its previous inclusion was fully processed.",
+                include_path.display()
+            );
+
+            self.merge(
+                Some(include_path.clone()),
+                included_extensions,
+                included_toml,
+                // Ensures that parent configuration always takes precedence
+                // over child configurations.
+                ReplaceOpt::IgnoreDuplicate,
+            );
+
+            included_extensions.remove(&include_path);
         }
     }
 }
@@ -803,7 +850,13 @@ macro_rules! define_config {
         }
 
         impl Merge for $name {
-            fn merge(&mut self, other: Self, replace: ReplaceOpt) {
+            fn merge(
+                &mut self,
+                _parent_config_path: Option<PathBuf>,
+                _included_extensions: &mut HashSet<PathBuf>,
+                other: Self,
+                replace: ReplaceOpt
+            ) {
                 $(
                     match replace {
                         ReplaceOpt::IgnoreDuplicate => {
@@ -903,7 +956,13 @@ macro_rules! define_config {
 }
 
 impl<T> Merge for Option<T> {
-    fn merge(&mut self, other: Self, replace: ReplaceOpt) {
+    fn merge(
+        &mut self,
+        _parent_config_path: Option<PathBuf>,
+        _included_extensions: &mut HashSet<PathBuf>,
+        other: Self,
+        replace: ReplaceOpt,
+    ) {
         match replace {
             ReplaceOpt::IgnoreDuplicate => {
                 if self.is_none() {
@@ -1363,13 +1422,15 @@ impl Config {
         Self::get_toml(&builder_config_path)
     }
 
-    #[cfg(test)]
-    pub(crate) fn get_toml(_: &Path) -> Result<TomlConfig, toml::de::Error> {
-        Ok(TomlConfig::default())
+    pub(crate) fn get_toml(file: &Path) -> Result<TomlConfig, toml::de::Error> {
+        #[cfg(test)]
+        return Ok(TomlConfig::default());
+
+        #[cfg(not(test))]
+        Self::get_toml_inner(file)
     }
 
-    #[cfg(not(test))]
-    pub(crate) fn get_toml(file: &Path) -> Result<TomlConfig, toml::de::Error> {
+    fn get_toml_inner(file: &Path) -> Result<TomlConfig, toml::de::Error> {
         let contents =
             t!(fs::read_to_string(file), format!("config file {} not found", file.display()));
         // Deserialize to Value and then TomlConfig to prevent the Deserialize impl of
@@ -1548,7 +1609,8 @@ impl Config {
         // but not if `bootstrap.toml` hasn't been created.
         let mut toml = if !using_default_path || toml_path.exists() {
             config.config = Some(if cfg!(not(test)) {
-                toml_path.canonicalize().unwrap()
+                toml_path = toml_path.canonicalize().unwrap();
+                toml_path.clone()
             } else {
                 toml_path.clone()
             });
@@ -1576,6 +1638,26 @@ impl Config {
             toml.profile = Some("dist".into());
         }
 
+        // Reverse the list to ensure the last added config extension remains the most dominant.
+        // For example, given ["a.toml", "b.toml"], "b.toml" should take precedence over "a.toml".
+        //
+        // This must be handled before applying the `profile` since `include`s should always take
+        // precedence over `profile`s.
+        for include_path in toml.include.clone().unwrap_or_default().iter().rev() {
+            let include_path = toml_path.parent().unwrap().join(include_path);
+
+            let included_toml = get_toml(&include_path).unwrap_or_else(|e| {
+                eprintln!("ERROR: Failed to parse '{}': {e}", include_path.display());
+                exit!(2);
+            });
+            toml.merge(
+                Some(include_path),
+                &mut Default::default(),
+                included_toml,
+                ReplaceOpt::IgnoreDuplicate,
+            );
+        }
+
         if let Some(include) = &toml.profile {
             // Allows creating alias for profile names, allowing
             // profiles to be renamed while maintaining back compatibility
@@ -1597,7 +1679,12 @@ impl Config {
                 );
                 exit!(2);
             });
-            toml.merge(included_toml, ReplaceOpt::IgnoreDuplicate);
+            toml.merge(
+                Some(include_path),
+                &mut Default::default(),
+                included_toml,
+                ReplaceOpt::IgnoreDuplicate,
+            );
         }
 
         let mut override_toml = TomlConfig::default();
@@ -1608,7 +1695,12 @@ impl Config {
 
             let mut err = match get_table(option) {
                 Ok(v) => {
-                    override_toml.merge(v, ReplaceOpt::ErrorOnDuplicate);
+                    override_toml.merge(
+                        None,
+                        &mut Default::default(),
+                        v,
+                        ReplaceOpt::ErrorOnDuplicate,
+                    );
                     continue;
                 }
                 Err(e) => e,
@@ -1619,7 +1711,12 @@ impl Config {
                 if !value.contains('"') {
                     match get_table(&format!(r#"{key}="{value}""#)) {
                         Ok(v) => {
-                            override_toml.merge(v, ReplaceOpt::ErrorOnDuplicate);
+                            override_toml.merge(
+                                None,
+                                &mut Default::default(),
+                                v,
+                                ReplaceOpt::ErrorOnDuplicate,
+                            );
                             continue;
                         }
                         Err(e) => err = e,
@@ -1629,7 +1726,7 @@ impl Config {
             eprintln!("failed to parse override `{option}`: `{err}");
             exit!(2)
         }
-        toml.merge(override_toml, ReplaceOpt::Override);
+        toml.merge(None, &mut Default::default(), override_toml, ReplaceOpt::Override);
 
         config.change_id = toml.change_id.inner;
 
@@ -2397,6 +2494,12 @@ impl Config {
             );
         }
 
+        if config.lld_enabled && config.is_system_llvm(config.build) {
+            eprintln!(
+                "Warning: LLD is enabled when using external llvm-config. LLD will not be built and copied to the sysroot."
+            );
+        }
+
         let default_std_features = BTreeSet::from([String::from("panic-unwind")]);
         config.rust_std_features = std_features.unwrap_or(default_std_features);
 
@@ -2888,6 +2991,13 @@ impl Config {
 
         let absolute_path = self.src.join(relative_path);
 
+        // NOTE: This check is required because `jj git clone` doesn't create directories for
+        // submodules, they are completely ignored. The code below assumes this directory exists,
+        // so create it here.
+        if !absolute_path.exists() {
+            t!(fs::create_dir_all(&absolute_path));
+        }
+
         // NOTE: The check for the empty directory is here because when running x.py the first time,
         // the submodule won't be checked out. Check it out now so we can build it.
         if !GitInfo::new(false, &absolute_path).is_managed_git_subrepository()
@@ -3232,6 +3342,42 @@ impl Config {
         }
 
         Some(commit.to_string())
+    }
+
+    /// Checks if the given target is the same as the host target.
+    pub fn is_host_target(&self, target: TargetSelection) -> bool {
+        self.build == target
+    }
+
+    /// Returns `true` if this is an external version of LLVM not managed by bootstrap.
+    /// In particular, we expect llvm sources to be available when this is false.
+    ///
+    /// NOTE: this is not the same as `!is_rust_llvm` when `llvm_has_patches` is set.
+    pub fn is_system_llvm(&self, target: TargetSelection) -> bool {
+        match self.target_config.get(&target) {
+            Some(Target { llvm_config: Some(_), .. }) => {
+                let ci_llvm = self.llvm_from_ci && self.is_host_target(target);
+                !ci_llvm
+            }
+            // We're building from the in-tree src/llvm-project sources.
+            Some(Target { llvm_config: None, .. }) => false,
+            None => false,
+        }
+    }
+
+    /// Returns `true` if this is our custom, patched, version of LLVM.
+    ///
+    /// This does not necessarily imply that we're managing the `llvm-project` submodule.
+    pub fn is_rust_llvm(&self, target: TargetSelection) -> bool {
+        match self.target_config.get(&target) {
+            // We're using a user-controlled version of LLVM. The user has explicitly told us whether the version has our patches.
+            // (They might be wrong, but that's not a supported use-case.)
+            // In particular, this tries to support `submodules = false` and `patches = false`, for using a newer version of LLVM that's not through `rust-lang/llvm-project`.
+            Some(Target { llvm_has_rust_patches: Some(patched), .. }) => *patched,
+            // The user hasn't promised the patches match.
+            // This only has our patches if it's downloaded from CI or built from source.
+            _ => !self.is_system_llvm(target),
+        }
     }
 }
 

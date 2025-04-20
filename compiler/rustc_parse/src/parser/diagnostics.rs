@@ -1657,19 +1657,19 @@ impl<'a> Parser<'a> {
 
         self.bump(); // `+`
         let _bounds = self.parse_generic_bounds()?;
-        let sum_span = ty.span.to(self.prev_token.span);
-
         let sub = match &ty.kind {
             TyKind::Ref(_lifetime, mut_ty) => {
                 let lo = mut_ty.ty.span.shrink_to_lo();
                 let hi = self.prev_token.span.shrink_to_hi();
                 BadTypePlusSub::AddParen { suggestion: AddParen { lo, hi } }
             }
-            TyKind::Ptr(..) | TyKind::BareFn(..) => BadTypePlusSub::ForgotParen { span: sum_span },
-            _ => BadTypePlusSub::ExpectPath { span: sum_span },
+            TyKind::Ptr(..) | TyKind::BareFn(..) => {
+                BadTypePlusSub::ForgotParen { span: ty.span.to(self.prev_token.span) }
+            }
+            _ => BadTypePlusSub::ExpectPath { span: ty.span },
         };
 
-        self.dcx().emit_err(BadTypePlus { ty: pprust::ty_to_string(ty), span: sum_span, sub });
+        self.dcx().emit_err(BadTypePlus { span: ty.span, sub });
 
         Ok(())
     }
@@ -1943,10 +1943,7 @@ impl<'a> Parser<'a> {
             && self.token == token::Colon
             && self.look_ahead(1, |next| line_idx(self.token.span) < line_idx(next.span))
         {
-            self.dcx().emit_err(ColonAsSemi {
-                span: self.token.span,
-                type_ascription: self.psess.unstable_features.is_nightly_build(),
-            });
+            self.dcx().emit_err(ColonAsSemi { span: self.token.span });
             self.bump();
             return true;
         }
