@@ -234,7 +234,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // us do better coercions than we would be able to do otherwise,
         // particularly for things like `String + &String`.
         let rhs_ty_var = self.next_ty_var(rhs_expr.span);
-
         let result = self.lookup_op_method(
             (lhs_expr, lhs_ty),
             Some((rhs_expr, rhs_ty_var)),
@@ -689,6 +688,59 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                             ".offset_from(".to_owned(),
                                         ),
                                         (rhs_expr.span.shrink_to_hi(), ") }".to_owned()),
+                                    ],
+                                    Applicability::MaybeIncorrect,
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                // If there any better way to get lhs name variable please tell me :)
+                // I really wanna know
+                let lhs_name_str = match lhs_expr.kind {
+                    hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
+                        path.segments.last().map_or("_".to_string(), |s| s.ident.to_string())
+                    }
+                    _ => self
+                        .tcx
+                        .sess
+                        .source_map()
+                        .span_to_snippet(lhs_expr.span)
+                        .unwrap_or("_".to_string()),
+                };
+
+                if op.span().can_be_used_for_suggestions() {
+                    match op {
+                        Op::AssignOp(Spanned { node: hir::AssignOpKind::AddAssign, .. })
+                            if lhs_ty.is_raw_ptr() && rhs_ty.is_integral() =>
+                        {
+                            err.multipart_suggestion(
+                                "consider replacing `ptr += offset` with `ptr = ptr.wrapping_add(offset)` or `ptr.add(offset)`",
+                                vec![
+                                    (lhs_expr.span.shrink_to_lo(), format!("{} = ", lhs_name_str)),
+                                    (
+                                        lhs_expr.span.between(rhs_expr.span),
+                                        ".wrapping_add(".to_owned(),
+                                    ),
+                                    (rhs_expr.span.shrink_to_hi(), ")".to_owned()),
+                                ],
+                                Applicability::MaybeIncorrect,
+                            );
+                        }
+                        Op::AssignOp(Spanned { node: hir::AssignOpKind::SubAssign, .. }) => {
+                            if lhs_ty.is_raw_ptr() && rhs_ty.is_integral() {
+                                err.multipart_suggestion(
+                                    "consider replacing `ptr -= offset` with `ptr = ptr.wrapping_sub(offset)` or `ptr.sub(offset)`",
+                                    vec![
+                                        (lhs_expr.span.shrink_to_lo(), format!("{} = ", lhs_name_str)),
+                                        (
+                                            lhs_expr.span.between(rhs_expr.span),
+                                            ".wrapping_sub(".to_owned(),
+
+                                        ),
+                                        (rhs_expr.span.shrink_to_hi(), ")".to_owned()),
                                     ],
                                     Applicability::MaybeIncorrect,
                                 );
