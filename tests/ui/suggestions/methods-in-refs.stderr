@@ -1,0 +1,61 @@
+error[E0599]: no method named `new` found for struct `A` in the current scope
+  --> $DIR/methods-in-refs.rs:3:7
+   |
+LL |     a.new();
+   |       ^^^ method not found in `A`
+...
+LL | struct A;
+   | -------- method `new` not found for this struct
+   |
+help: `new` method was found in `&A`, you can access it with `.as_ref()`
+   |
+LL |     a.as_ref().new();
+   |       +++++++++
+
+error[E0599]: no method named `new` found for struct `B` in the current scope
+  --> $DIR/methods-in-refs.rs:6:7
+   |
+LL |     b.new();
+   |       ^^^ method not found in `B`
+...
+LL | struct B;
+   | -------- method `new` not found for this struct
+   |
+help: `new` method was found in `&mut B`, you can access it with `.as_mut()`
+   |
+LL |     b.as_mut().new();
+   |       +++++++++
+
+error[E0599]: no method named `new` found for struct `C` in the current scope
+  --> $DIR/methods-in-refs.rs:9:7
+   |
+LL |     c.new();
+   |       ^^^ method not found in `C`
+...
+LL | struct C;
+   | -------- method `new` not found for this struct
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `new`, perhaps you need to implement one of them:
+           candidate #1: `X`
+           candidate #2: `Y`
+           candidate #3: `Z`
+
+error[E0599]: no method named `new` found for struct `D` in the current scope
+  --> $DIR/methods-in-refs.rs:12:7
+   |
+LL |     d.new();
+   |       ^^^ method not found in `D`
+...
+LL | struct D;
+   | -------- method `new` not found for this struct
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `new`, perhaps you need to implement one of them:
+           candidate #1: `X`
+           candidate #2: `Y`
+           candidate #3: `Z`
+
+error: aborting due to 4 previous errors
+
+For more information about this error, try `rustc --explain E0599`.

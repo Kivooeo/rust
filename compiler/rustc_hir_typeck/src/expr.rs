@@ -1583,7 +1583,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         &self,
         expr: &'tcx hir::Expr<'tcx>,
         segment: &'tcx hir::PathSegment<'tcx>,
-        rcvr: &'tcx hir::Expr<'tcx>,
+        mut rcvr: &'tcx hir::Expr<'tcx>,
         args: &'tcx [hir::Expr<'tcx>],
         expected: Expectation<'tcx>,
     ) -> Ty<'tcx> {
@@ -1600,7 +1600,32 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 Ok(method)
             }
             Err(error) => {
-                Err(self.report_method_error(expr.hir_id, rcvr_t, error, expected, false))
+                let ref_ty = Ty::new_ref(
+                    self.tcx,
+                    self.tcx.lifetimes.re_erased,
+                    rcvr_t,
+                    ty::Mutability::Not,
+                );
+                let mut_ty = Ty::new_ref(
+                    self.tcx,
+                    self.tcx.lifetimes.re_erased,
+                    rcvr_t,
+                    ty::Mutability::Mut,
+                );
+                let exist_in_as_ref = self
+                    .lookup_method(ref_ty, segment, segment.ident.span, expr, &rcvr, args)
+                    .is_ok();
+                let exist_in_as_mut = self
+                    .lookup_method(mut_ty, segment, segment.ident.span, expr, &mut rcvr, args)
+                    .is_ok();
+                Err(self.report_method_error(
+                    expr.hir_id,
+                    rcvr_t,
+                    error,
+                    expected,
+                    false,
+                    (exist_in_as_ref, exist_in_as_mut),
+                ))
             }
         };
 

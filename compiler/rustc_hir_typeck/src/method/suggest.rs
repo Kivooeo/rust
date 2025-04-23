@@ -150,6 +150,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         error: MethodError<'tcx>,
         expected: Expectation<'tcx>,
         trait_missing_method: bool,
+        method_exit_in_as_ref: (bool, bool),
     ) -> ErrorGuaranteed {
         // NOTE: Reporting a method error should also suppress any unused trait errors,
         // since the method error is very possibly the reason why the trait wasn't used.
@@ -217,6 +218,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 expected,
                 trait_missing_method,
                 within_macro_span,
+                method_exit_in_as_ref,
             ),
 
             MethodError::Ambiguity(mut sources) => {
@@ -594,6 +596,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         expected: Expectation<'tcx>,
         trait_missing_method: bool,
         within_macro_span: Option<Span>,
+        method_exit_in_as_ref: (bool, bool),
     ) -> ErrorGuaranteed {
         let mode = no_match_data.mode;
         let tcx = self.tcx;
@@ -928,6 +931,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 );
             }
             return err.emit();
+        } else if method_exit_in_as_ref.0 {
+            err.multipart_suggestion_verbose(
+                format!("`{item_ident}` method was found in `&{rcvr_ty}`, you can access it with `.as_ref()`"),
+                vec![(span.shrink_to_lo(), "as_ref().".to_string())],
+                Applicability::MaybeIncorrect,
+            );
+        } else if method_exit_in_as_ref.1 {
+            err.multipart_suggestion_verbose(
+                format!("`{item_ident}` method was found in `&mut {rcvr_ty}`, you can access it with `.as_mut()`"),
+                vec![(span.shrink_to_lo(), "as_mut().".to_string())],
+                Applicability::MaybeIncorrect,
+            );
         } else if !unsatisfied_predicates.is_empty() && matches!(rcvr_ty.kind(), ty::Param(_)) {
             // We special case the situation where we are looking for `_` in
             // `<TypeParam as _>::method` because otherwise the machinery will look for blanket
@@ -1574,7 +1589,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         if rcvr_ty.is_numeric() && rcvr_ty.is_fresh() || restrict_type_params || suggested_derive {
-        } else {
+        } else if !(method_exit_in_as_ref.0 || method_exit_in_as_ref.1) {
             self.suggest_traits_to_import(
                 &mut err,
                 span,

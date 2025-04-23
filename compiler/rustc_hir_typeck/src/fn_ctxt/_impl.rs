@@ -839,6 +839,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     error,
                     Expectation::NoExpectation,
                     trait_missing_method && span.edition().at_least_rust_2021(), // emits missing method for trait only after edition 2021
+                    (false, false),
                 );
 
                 result
