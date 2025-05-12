@@ -1,4 +1,5 @@
 // tidy-alphabetical-start
+#![cfg_attr(bootstrap, feature(if_let_guard))]
 #![cfg_attr(bootstrap, feature(let_chains))]
 #![feature(array_windows)]
 #![feature(assert_matches)]
@@ -6,7 +7,6 @@
 #![feature(const_type_name)]
 #![feature(cow_is_borrowed)]
 #![feature(file_buffered)]
-#![feature(if_let_guard)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(map_try_insert)]
 #![feature(never_type)]

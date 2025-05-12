@@ -1,6 +1,9 @@
 // Check shadowing in if let guards works as expected.
+
 //@ check-pass
-//@ edition: 2024
+//@revisions: edition2021 edition2024
+//@[edition2021] edition:2021
+//@[edition2024] edition:2024
 
 #![feature(if_let_guard)]
 

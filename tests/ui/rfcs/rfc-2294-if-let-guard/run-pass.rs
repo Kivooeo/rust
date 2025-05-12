@@ -1,4 +1,7 @@
 //@ run-pass
+//@revisions: edition2021 edition2024
+//@[edition2021] edition:2021
+//@[edition2024] edition:2024
 
 #![feature(if_let_guard)]
 

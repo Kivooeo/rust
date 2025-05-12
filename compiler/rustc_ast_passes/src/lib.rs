@@ -4,10 +4,10 @@
 
 // tidy-alphabetical-start
 #![allow(internal_features)]
+#![cfg_attr(bootstrap, feature(if_let_guard))]
 #![cfg_attr(bootstrap, feature(let_chains))]
 #![doc(rust_logo)]
 #![feature(box_patterns)]
-#![feature(if_let_guard)]
 #![feature(iter_is_partitioned)]
 #![feature(rustdoc_internals)]
 // tidy-alphabetical-end

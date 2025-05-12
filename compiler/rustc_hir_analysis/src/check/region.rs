@@ -168,7 +168,7 @@ fn resolve_block<'tcx>(
                     .backwards_incompatible_scope
                     .insert(local_id, Scope { local_id, data: ScopeData::Node });
             }
-            resolve_expr(visitor, tail_expr, terminating);
+            resolve_expr(visitor, tail_expr, terminating, false);
         }
     }
 
@@ -191,9 +191,9 @@ fn resolve_arm<'tcx>(visitor: &mut ScopeResolutionVisitor<'tcx>, arm: &'tcx hir:
 
     resolve_pat(visitor, arm.pat);
     if let Some(guard) = arm.guard {
-        resolve_expr(visitor, guard, !has_let_expr(guard));
+        resolve_expr(visitor, guard, !has_let_expr(guard), true);
     }
-    resolve_expr(visitor, arm.body, false);
+    resolve_expr(visitor, arm.body, false, false);
 
     visitor.cx = prev_cx;
 }
@@ -246,6 +246,7 @@ fn resolve_expr<'tcx>(
     visitor: &mut ScopeResolutionVisitor<'tcx>,
     expr: &'tcx hir::Expr<'tcx>,
     terminating: bool,
+    in_guard: bool,
 ) {
     debug!("resolve_expr - pre-increment {} expr = {:?}", visitor.expr_and_pat_count, expr);
 
@@ -349,8 +350,8 @@ fn resolve_expr<'tcx>(
             // should live beyond the immediate expression
             let terminate_rhs = !matches!(right.kind, hir::ExprKind::Let(_));
 
-            resolve_expr(visitor, left, terminate_lhs);
-            resolve_expr(visitor, right, terminate_rhs);
+            resolve_expr(visitor, left, terminate_lhs, in_guard);
+            resolve_expr(visitor, right, terminate_rhs, in_guard);
         }
         // Manually recurse over closures, because they are nested bodies
         // that share the parent environment. We handle const blocks in
@@ -412,7 +413,7 @@ fn resolve_expr<'tcx>(
 
         hir::ExprKind::If(cond, then, Some(otherwise)) => {
             let expr_cx = visitor.cx;
-            let data = if expr.span.at_least_rust_2024() {
+            let data = if expr.span.at_least_rust_2024() || in_guard {
                 ScopeData::IfThenRescope
             } else {
                 ScopeData::IfThen
@@ -420,14 +421,14 @@ fn resolve_expr<'tcx>(
             visitor.enter_scope(Scope { local_id: then.hir_id.local_id, data });
             visitor.cx.var_parent = visitor.cx.parent;
             visitor.visit_expr(cond);
-            resolve_expr(visitor, then, true);
+            resolve_expr(visitor, then, true, false);
             visitor.cx = expr_cx;
-            resolve_expr(visitor, otherwise, true);
+            resolve_expr(visitor, otherwise, true, false);
         }
 
         hir::ExprKind::If(cond, then, None) => {
             let expr_cx = visitor.cx;
-            let data = if expr.span.at_least_rust_2024() {
+            let data = if expr.span.at_least_rust_2024() || in_guard {
                 ScopeData::IfThenRescope
             } else {
                 ScopeData::IfThen
@@ -435,7 +436,7 @@ fn resolve_expr<'tcx>(
             visitor.enter_scope(Scope { local_id: then.hir_id.local_id, data });
             visitor.cx.var_parent = visitor.cx.parent;
             visitor.visit_expr(cond);
-            resolve_expr(visitor, then, true);
+            resolve_expr(visitor, then, true, false);
             visitor.cx = expr_cx;
         }
 
@@ -446,7 +447,7 @@ fn resolve_expr<'tcx>(
         hir::ExprKind::DropTemps(expr) => {
             // `DropTemps(expr)` does not denote a conditional scope.
             // Rather, we want to achieve the same behavior as `{ let _t = expr; _t }`.
-            resolve_expr(visitor, expr, true);
+            resolve_expr(visitor, expr, true, false);
         }
 
         _ => intravisit::walk_expr(visitor, expr),
@@ -840,7 +841,7 @@ impl<'tcx> Visitor<'tcx> for ScopeResolutionVisitor<'tcx> {
                 }
 
                 // The body of the every fn is a root scope.
-                resolve_expr(this, body.value, true);
+                resolve_expr(this, body.value, true, false);
             } else {
                 // Only functions have an outer terminating (drop) scope, while
                 // temporaries in constant initializers may be 'static, but only
@@ -880,7 +881,7 @@ impl<'tcx> Visitor<'tcx> for ScopeResolutionVisitor<'tcx> {
         resolve_stmt(self, s);
     }
     fn visit_expr(&mut self, ex: &'tcx Expr<'tcx>) {
-        resolve_expr(self, ex, false);
+        resolve_expr(self, ex, false, false);
     }
     fn visit_local(&mut self, l: &'tcx LetStmt<'tcx>) {
         let let_kind = match l.super_ {
