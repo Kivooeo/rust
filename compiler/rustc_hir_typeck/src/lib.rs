@@ -1,9 +1,9 @@
 // tidy-alphabetical-start
 #![allow(rustc::diagnostic_outside_of_impl)]
 #![allow(rustc::untranslatable_diagnostic)]
+#![cfg_attr(bootstrap, feature(if_let_guard))]
 #![feature(array_windows)]
 #![feature(box_patterns)]
-#![feature(if_let_guard)]
 #![feature(iter_intersperse)]
 #![feature(never_type)]
 #![feature(try_blocks)]
