@@ -1,3 +1,5 @@
+//! Tests that mutable references to temporary Box values are handled correctly.
+
 //@ run-pass
 
 fn foo(x: &mut Box<u8>) {

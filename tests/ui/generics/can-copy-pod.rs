@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-fn can_copy_copy<T:Copy>(v: T) {
+fn can_copy_copy<T: Copy>(v: T) {
     let _a = v;
     let _b = v;
 }
