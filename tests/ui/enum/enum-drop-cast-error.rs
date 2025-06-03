@@ -1,3 +1,5 @@
+//! Ensures safe handling of enums with `Drop` by preventing integer casts.
+
 enum E {
     A = 0,
 }
