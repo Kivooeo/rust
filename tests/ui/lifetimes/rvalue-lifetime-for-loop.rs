@@ -1,17 +1,23 @@
+//! Test that the lifetime of rvalues in for loops is extended
+//! to the for loop itself.
+
 //@ run-pass
 
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
-// Test that the lifetime of rvalues in for loops is extended
-// to the for loop itself.
+
 static mut FLAGS: u64 = 0;
 
-struct Box<T> { f: T }
-struct AddFlags { bits: u64 }
+struct Box<T> {
+    f: T,
+}
+struct AddFlags {
+    bits: u64,
+}
 
 fn AddFlags(bits: u64) -> AddFlags {
-    AddFlags { bits: bits }
+    AddFlags { bits }
 }
 
 fn arg(exp: u64, _x: &AddFlags) {
