@@ -1,3 +1,5 @@
+//! Verifies equality comparisons for the `char` type.
+
 //@ run-pass
 
 pub fn main() {
