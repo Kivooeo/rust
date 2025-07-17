@@ -1,14 +1,10 @@
-mod cat {
-    pub struct Cat {
-        meows: usize
-    }
-
-    pub fn new_cat() -> Cat {
-        Cat { meows: 52 }
-    }
+//! Regression test for https://github.com/rust-lang/rust/issues/10545
+mod a {
+    struct S;
+    impl S { }
 }
 
-fn main() {
-    let nyan = cat::new_cat();
-    assert_eq!(nyan.meows, 52);    //~ ERROR field `meows` of struct `Cat` is private
+fn foo(_: a::S) { //~ ERROR: struct `S` is private
 }
+
+fn main() {}
