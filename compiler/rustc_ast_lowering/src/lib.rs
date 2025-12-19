@@ -42,13 +42,14 @@ use rustc_ast::node_id::NodeMap;
 use rustc_ast::{self as ast, *};
 use rustc_attr_parsing::{AttributeParser, Late, OmitDoc};
 use rustc_data_structures::fingerprint::Fingerprint;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::sorted_map::SortedMap;
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_data_structures::sync::spawn;
 use rustc_data_structures::tagged_ptr::TaggedRef;
 use rustc_errors::{DiagArgFromDisplay, DiagCtxtHandle};
 use rustc_hir::def::{DefKind, LifetimeRes, Namespace, PartialRes, PerNS, Res};
-use rustc_hir::def_id::{CRATE_DEF_ID, LOCAL_CRATE, LocalDefId};
+use rustc_hir::def_id::{CRATE_DEF_ID, DefId, LOCAL_CRATE, LocalDefId};
 use rustc_hir::definitions::{DefPathData, DisambiguatorState};
 use rustc_hir::lints::DelayedLint;
 use rustc_hir::{
@@ -148,10 +149,15 @@ struct LoweringContext<'a, 'hir> {
     delayed_lints: Vec<DelayedLint>,
 
     attribute_parser: AttributeParser<'hir>,
+    eii_macro_cache: &'a mut FxHashMap<Symbol, DefId>,
 }
 
 impl<'a, 'hir> LoweringContext<'a, 'hir> {
-    fn new(tcx: TyCtxt<'hir>, resolver: &'a mut ResolverAstLowering) -> Self {
+    fn new(
+        tcx: TyCtxt<'hir>,
+        resolver: &'a mut ResolverAstLowering,
+        eii_macro_cache: &'a mut FxHashMap<Symbol, DefId>,
+    ) -> Self {
         let registered_tools = tcx.registered_tools(()).iter().map(|x| x.name).collect();
         Self {
             // Pseudo-globals.
@@ -210,6 +216,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 Late,
             ),
             delayed_lints: Vec::new(),
+            eii_macro_cache,
         }
     }
 
@@ -512,11 +519,15 @@ pub fn lower_to_hir(tcx: TyCtxt<'_>, (): ()) -> hir::Crate<'_> {
         tcx.definitions_untracked().def_index_count(),
     );
 
+    let mut eii_macro_cache = FxHashMap::default();
+    collect_eii_macros(&krate, &resolver.node_id_to_def_id, &mut eii_macro_cache);
+
     let mut lowerer = item::ItemLowerer {
         tcx,
         resolver: &mut resolver,
         ast_index: &ast_index,
         owners: &mut owners,
+        eii_macro_cache,
     };
     for def_id in ast_index.indices() {
         lowerer.lower_node(def_id);
@@ -535,6 +546,34 @@ pub fn lower_to_hir(tcx: TyCtxt<'_>, (): ()) -> hir::Crate<'_> {
     let opt_hir_hash =
         if tcx.needs_crate_hash() { Some(compute_hir_hash(tcx, &owners)) } else { None };
     hir::Crate { owners, opt_hir_hash }
+}
+
+fn collect_eii_macros(
+    krate: &Crate,
+    node_id_to_def_id: &NodeMap<LocalDefId>,
+    cache: &mut FxHashMap<Symbol, DefId>,
+) {
+    fn visit_items(
+        items: &[Box<Item>],
+        node_id_to_def_id: &NodeMap<LocalDefId>,
+        cache: &mut FxHashMap<Symbol, DefId>,
+    ) {
+        for item in items {
+            match &item.kind {
+                ItemKind::MacroDef(def, MacroDef { eii_extern_target: Some(_), .. })
+                    if let Some(&def_id) = node_id_to_def_id.get(&item.id) =>
+                {
+                    cache.insert(def.name, def_id.to_def_id());
+                }
+                ItemKind::Mod(_, _, mod_kind) if let ModKind::Loaded(items, _, _) = mod_kind => {
+                    visit_items(items, node_id_to_def_id, cache);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    visit_items(&krate.items, node_id_to_def_id, cache);
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]

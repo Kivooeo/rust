@@ -1,6 +1,7 @@
 use rustc_abi::ExternAbi;
 use rustc_ast::visit::AssocCtxt;
 use rustc_ast::*;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_errors::{E0570, ErrorGuaranteed, struct_span_code_err};
 use rustc_hir::attrs::{AttributeKind, EiiDecl};
 use rustc_hir::def::{DefKind, PerNS, Res};
@@ -30,6 +31,7 @@ pub(super) struct ItemLowerer<'a, 'hir> {
     pub(super) resolver: &'a mut ResolverAstLowering,
     pub(super) ast_index: &'a IndexSlice<LocalDefId, AstOwner<'a>>,
     pub(super) owners: &'a mut IndexVec<LocalDefId, hir::MaybeOwner<'hir>>,
+    pub(super) eii_macro_cache: FxHashMap<Symbol, DefId>,
 }
 
 /// When we have a ty alias we *may* have two where clauses. To give the best diagnostics, we set the span
@@ -57,7 +59,7 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
         owner: NodeId,
         f: impl FnOnce(&mut LoweringContext<'_, 'hir>) -> hir::OwnerNode<'hir>,
     ) {
-        let mut lctx = LoweringContext::new(self.tcx, self.resolver);
+        let mut lctx = LoweringContext::new(self.tcx, self.resolver, &mut self.eii_macro_cache);
         lctx.with_hir_id_owner(owner, |lctx| f(lctx));
 
         for (def_id, info) in lctx.children {
@@ -105,6 +107,13 @@ impl<'hir> LoweringContext<'_, 'hir> {
         items: &[Box<Item>],
         spans: &ModSpans,
     ) -> &'hir hir::Mod<'hir> {
+        for item in items {
+            if let ItemKind::MacroDef(def, MacroDef { eii_extern_target: Some(_), .. }) = &item.kind
+                && let Some(&macro_def_id) = self.resolver.node_id_to_def_id.get(&item.id)
+            {
+                self.eii_macro_cache.insert(def.name, macro_def_id.to_def_id());
+            }
+        }
         self.arena.alloc(hir::Mod {
             spans: hir::ModSpans {
                 inner_span: self.lower_span(spans.inner_span),
@@ -558,12 +567,15 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     fn lower_path_simple_eii(&mut self, id: NodeId, path: &Path) -> Option<DefId> {
         let res = self.resolver.get_partial_res(id)?;
-        let Some(did) = res.expect_full_res().opt_def_id() else {
-            self.dcx().span_delayed_bug(path.span, "should have errored in resolve");
-            return None;
-        };
 
-        Some(did)
+        if let hir::def::Res::Def(hir::def::DefKind::Macro(kinds), _) = res.base_res()
+            && kinds.bits() == 1
+        {
+            let macro_name = path.segments.last()?.ident.name;
+            return self.eii_macro_cache.get(&macro_name).copied();
+        }
+
+        res.expect_full_res().opt_def_id()
     }
 
     #[instrument(level = "debug", skip(self))]
