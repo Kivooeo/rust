@@ -9,7 +9,7 @@ use rustc_middle::query::Providers;
 use rustc_middle::thir::visit;
 use rustc_middle::thir::visit::Visitor;
 use rustc_middle::ty::abstract_const::CastKind;
-use rustc_middle::ty::{self, Expr, TyCtxt, TypeVisitableExt};
+use rustc_middle::ty::{self, ConstKind, Expr, TyCtxt, TypeVisitableExt};
 use rustc_middle::{bug, mir, thir};
 use rustc_span::Span;
 use tracing::{debug, instrument};
@@ -51,8 +51,13 @@ fn destructure_const<'tcx>(
 
             for (field, field_valtree) in iter::zip(fields, branches) {
                 let field_ty = field.ty(tcx, args);
-                let field_const =
-                    ty::Const::new_value(tcx, field_valtree.to_value().valtree, field_ty);
+                let field_const = match field_valtree.kind() {
+                    ConstKind::Unevaluated(uneval) => ty::Const::new_unevaluated(tcx, uneval),
+                    ConstKind::Param(_) | ConstKind::Infer(_) | ConstKind::Expr(_) => {
+                        *field_valtree
+                    }
+                    _ => ty::Const::new_value(tcx, field_valtree.to_value().valtree, field_ty),
+                };
                 field_consts.push(field_const);
             }
             debug!(?field_consts);

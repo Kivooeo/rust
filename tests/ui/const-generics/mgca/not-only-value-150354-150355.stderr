@@ -1,0 +1,46 @@
+error[E0741]: `Option<u32>` must implement `ConstParamTy` to be used as the type of a const generic parameter
+  --> $DIR/not-only-value-150354-150355.rs:14:17
+   |
+LL | fn foo<const N: Option<u32>>() {}
+   |                 ^^^^^^^^^^^
+   |
+help: add `#[derive(ConstParamTy, PartialEq, Eq)]` to the enum
+   |
+LL + #[derive(ConstParamTy, PartialEq, Eq)]
+LL | enum Option<T> {
+   |
+
+error[E0308]: mismatched types
+  --> $DIR/not-only-value-150354-150355.rs:17:36
+   |
+LL |     foo::<{ Some::<u32> { 0: const {} } }>();
+   |                                    ^^ expected `u32`, found `()`
+
+error: the constant `std::option::Option::<u32>::Some({})` is not of type `Option<u32>`
+  --> $DIR/not-only-value-150354-150355.rs:17:13
+   |
+LL |     foo::<{ Some::<u32> { 0: const {} } }>();
+   |             ^^^^^^^^^^^ expected `Option<u32>`, found `std::option::Option<u32>`
+   |
+note: required by a const generic parameter in `foo`
+  --> $DIR/not-only-value-150354-150355.rs:14:8
+   |
+LL | fn foo<const N: Option<u32>>() {}
+   |        ^^^^^^^^^^^^^^^^^^^^ required by this const generic parameter in `foo`
+
+error: the constant `std::option::Option::<u32>::Some(N)` is not of type `Option<u32>`
+  --> $DIR/not-only-value-150354-150355.rs:23:13
+   |
+LL |     foo::<{ Some::<u32> { 0: N } }>;
+   |             ^^^^^^^^^^^ expected `Option<u32>`, found `std::option::Option<u32>`
+   |
+note: required by a const generic parameter in `foo`
+  --> $DIR/not-only-value-150354-150355.rs:14:8
+   |
+LL | fn foo<const N: Option<u32>>() {}
+   |        ^^^^^^^^^^^^^^^^^^^^ required by this const generic parameter in `foo`
+
+error: aborting due to 4 previous errors
+
+Some errors have detailed explanations: E0308, E0741.
+For more information about an error, try `rustc --explain E0308`.
