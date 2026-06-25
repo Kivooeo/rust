@@ -1508,6 +1508,10 @@ pub struct Resolver<'ra, 'tcx> {
     delegation_fn_sigs: LocalDefIdMap<DelegationFnSig> = Default::default(),
     delegation_infos: FxIndexMap<LocalDefId, DelegationInfo>,
 
+    /// Paths to C/C++ source files collected from `clang!` imports, to be
+    /// compiled via clang and linked into the crate by the codegen backend.
+    clang_sources: Vec<Symbol> = Vec::new(),
+
     main_def: Option<MainDefinition> = None,
     trait_impls: FxIndexMap<DefId, Vec<LocalDefId>>,
     /// A list of proc macro LocalDefIds, written out in the order in which
@@ -2002,6 +2006,7 @@ impl<'ra, 'tcx> Resolver<'ra, 'tcx> {
             all_macro_rules: self.all_macro_rules,
             stripped_cfg_items,
             delegation_infos: self.delegation_infos,
+            clang_sources: self.clang_sources,
         };
         let ast_lowering = ty::ResolverAstLowering {
             partial_res_map: self.partial_res_map,

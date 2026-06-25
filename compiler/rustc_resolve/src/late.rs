@@ -3083,7 +3083,7 @@ impl<'a, 'ast, 'ra, 'tcx> LateResolutionVisitor<'a, 'ast, 'ra, 'tcx> {
                 }
             }
 
-            ItemKind::ForeignMod(_) | ItemKind::GlobalAsm(_) => {
+            ItemKind::ForeignMod(_) | ItemKind::GlobalAsm(_) | ItemKind::ClangImport(_) => {
                 visit::walk_item(self, item);
             }
 
@@ -5689,6 +5689,14 @@ impl<'ast> Visitor<'ast> for ItemInfoCollector<'_, '_, '_> {
 
             ItemKind::ForeignMod(ForeignMod { items, .. }) => {
                 for foreign_item in items {
+                    if let ForeignItemKind::Fn(Fn { sig, .. }) = &foreign_item.kind {
+                        self.collect_fn_info(&sig.decl, foreign_item.id);
+                    }
+                }
+            }
+
+            ItemKind::ClangImport(clang_import) => {
+                for foreign_item in &clang_import.fmod.items {
                     if let ForeignItemKind::Fn(Fn { sig, .. }) = &foreign_item.kind {
                         self.collect_fn_info(&sig.decl, foreign_item.id);
                     }

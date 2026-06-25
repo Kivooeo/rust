@@ -841,6 +841,8 @@ macro_rules! common_visitor_and_walkers {
                         visit_visitable!($($mut)? vis, nm),
                     ItemKind::GlobalAsm(asm) =>
                         visit_visitable!($($mut)? vis, asm),
+                    ItemKind::ClangImport(ci) =>
+                        visit_visitable!($($mut)? vis, ci),
                     ItemKind::TyAlias(ty_alias) =>
                         visit_visitable!($($mut)? vis, ty_alias),
                     ItemKind::Enum(ident, generics, enum_definition) =>

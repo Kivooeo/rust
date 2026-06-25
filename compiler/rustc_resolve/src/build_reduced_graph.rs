@@ -973,6 +973,14 @@ impl<'a, 'ra, 'tcx> DefCollector<'a, 'ra, 'tcx> {
                 );
             }
 
+            // A `clang!` import adds no names itself (its foreign items are
+            // handled by the visitor walking into them, exactly like an extern
+            // block), but we record `source` so the codegen backend can compile
+            // and link the C/C++ file into the current module.
+            ItemKind::ClangImport(clang_import) => {
+                self.r.clang_sources.push(clang_import.source);
+            }
+
             // These items do not add names to modules.
             ItemKind::Impl { .. }
             | ItemKind::ForeignMod(..)

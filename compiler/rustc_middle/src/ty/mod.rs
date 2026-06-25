@@ -205,6 +205,10 @@ pub struct ResolverGlobalCtxt {
     // Information about delegations which is used when handling recursive delegations
     // and ensures easy access to delegation-only `LocalDefId`s.
     pub delegation_infos: FxIndexMap<LocalDefId, DelegationInfo>,
+    /// Paths to C/C++ source files collected from `clang!` imports. The codegen
+    /// backend compiles each via clang to LLVM bitcode and links it into the
+    /// crate so the foreign declarations resolve to the C/C++ definitions.
+    pub clang_sources: Vec<Symbol>,
 }
 
 #[derive(Debug)]

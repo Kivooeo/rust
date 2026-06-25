@@ -606,6 +606,7 @@ symbols! {
         cfi,
         cfi_encoding,
         char,
+        clang,
         clflushopt_target_feature,
         client,
         clippy,

@@ -193,6 +193,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             | ItemKind::Mod(..)
             | ItemKind::ForeignMod(..)
             | ItemKind::GlobalAsm(..)
+            | ItemKind::ClangImport(..)
             | ItemKind::TyAlias(..)
             | ItemKind::Enum(..)
             | ItemKind::Struct(..)
@@ -369,6 +370,16 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 items: self
                     .arena
                     .alloc_from_iter(fm.items.iter().map(|x| self.lower_foreign_item_ref(x))),
+            },
+            // A `clang!` import lowers to a plain foreign module for its
+            // declarations (so typeck/codegen of the decls is reused). The
+            // `source` path was already recorded into `ResolverGlobalCtxt` and
+            // is consumed by the codegen backend, so it is not needed in HIR.
+            ItemKind::ClangImport(ci) => hir::ItemKind::ForeignMod {
+                abi: ci.fmod.abi.map_or(ExternAbi::FALLBACK, |abi| self.lower_abi(abi)),
+                items: self
+                    .arena
+                    .alloc_from_iter(ci.fmod.items.iter().map(|x| self.lower_foreign_item_ref(x))),
             },
             ItemKind::GlobalAsm(asm) => {
                 let asm = self.lower_inline_asm(span, asm);

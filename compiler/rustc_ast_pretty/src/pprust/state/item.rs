@@ -296,6 +296,13 @@ impl<'a> State<'a> {
                 self.end(ib);
                 self.end(cb);
             }
+            ast::ItemKind::ClangImport(ci) => {
+                let (cb, ib) = self.head(visibility_qualified(&item.vis, "clang!"));
+                self.bopen(ib);
+                self.print_foreign_mod(&ci.fmod, &item.attrs);
+                let empty = item.attrs.is_empty() && ci.fmod.items.is_empty();
+                self.bclose(item.span, empty, cb);
+            }
             ast::ItemKind::TyAlias(ast::TyAlias {
                 defaultness,
                 ident,

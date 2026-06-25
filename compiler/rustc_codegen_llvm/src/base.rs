@@ -174,21 +174,35 @@ pub(crate) fn compile_codegen_unit(
             }
         }
 
-        // === PoC: clang IR injection ===
-        // If `RUSTC_CLANG_BC` points at one or more `;`-separated LLVM bitcode
-        // files (produced by `clang -emit-llvm -c foo.cpp -o foo.bc`), parse and
-        // link them straight into this codegen unit's module. This stands in for
-        // the side-channel that a future `clang_include!` builtin macro would
-        // populate. We only inject once, into the first CGU, to avoid duplicate
-        // symbol definitions across codegen units.
-        if let Ok(bc_list) = std::env::var("RUSTC_CLANG_BC") {
+        // === clang! import injection ===
+        // The `clang!` builtin macro records the C/C++ source paths into
+        // `ResolverGlobalCtxt::clang_sources`. Here we compile each one via
+        // clang to LLVM bitcode and link it straight into this codegen unit's
+        // module, so the foreign declarations introduced by `clang!` resolve to
+        // the real C/C++ definitions. We only inject once, into the first CGU,
+        // to avoid duplicate symbol definitions across codegen units.
+        let clang_sources = &tcx.resolutions(()).clang_sources;
+        if !clang_sources.is_empty() {
             use std::sync::atomic::{AtomicBool, Ordering};
             static INJECTED: AtomicBool = AtomicBool::new(false);
             if !INJECTED.swap(true, Ordering::SeqCst) {
+                let clang = std::env::var("CLANG").unwrap_or_else(|_| "clang".to_string());
                 let linker = unsafe { llvm::LLVMRustLinkerNew(llvm_module.llmod()) };
-                for path in bc_list.split(';').filter(|p| !p.is_empty()) {
-                    let data = std::fs::read(path)
-                        .unwrap_or_else(|e| panic!("RUSTC_CLANG_BC: cannot read {path}: {e}"));
+                for (i, source) in clang_sources.iter().enumerate() {
+                    let source = source.as_str();
+                    let bc_path =
+                        std::env::temp_dir().join(format!("rustc-clang-import-{i}.bc"));
+                    let status = std::process::Command::new(&clang)
+                        .args(["-emit-llvm", "-O1", "-c", source, "-o"])
+                        .arg(&bc_path)
+                        .status()
+                        .unwrap_or_else(|e| panic!("clang!: failed to spawn `{clang}`: {e}"));
+                    if !status.success() {
+                        panic!("clang!: `{clang}` failed to compile {source}");
+                    }
+                    let data = std::fs::read(&bc_path).unwrap_or_else(|e| {
+                        panic!("clang!: cannot read bitcode {}: {e}", bc_path.display())
+                    });
                     let ok = unsafe {
                         llvm::LLVMRustLinkerAdd(
                             linker,
@@ -198,14 +212,14 @@ pub(crate) fn compile_codegen_unit(
                     };
                     if !ok {
                         unsafe { llvm::LLVMRustLinkerFree(linker) };
-                        panic!("RUSTC_CLANG_BC: failed to link bitcode from {path}");
+                        panic!("clang!: failed to link bitcode compiled from {source}");
                     }
-                    eprintln!("[clang-ir-poc] linked {path} into CGU `{cgu_name}`");
+                    eprintln!("[clang!] compiled and linked {source} into CGU `{cgu_name}`");
                 }
                 unsafe { llvm::LLVMRustLinkerFree(linker) };
             }
         }
-        // === end PoC ===
+        // === end clang! import injection ===
 
         ModuleCodegen::new_regular(cgu_name.to_string(), llvm_module)
     }

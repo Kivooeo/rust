@@ -209,6 +209,10 @@ impl<'a, 'ra, 'tcx> visit::Visitor<'a> for DefCollector<'a, 'ra, 'tcx> {
                 DefKind::Macro(macro_kinds)
             }
             ItemKind::GlobalAsm(..) => DefKind::GlobalAsm,
+            // A `clang!` import behaves like an `extern` block for the purpose
+            // of definitions: it introduces foreign declarations and is not a
+            // body owner.
+            ItemKind::ClangImport(..) => DefKind::ForeignMod,
             ItemKind::Use(_) => {
                 return self.with_owner(i.id, None, DefKind::Use, i.span, |this, feed| {
                     this.brg_visit_item(i, feed);

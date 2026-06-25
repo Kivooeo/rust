@@ -3315,6 +3315,21 @@ pub struct ForeignMod {
     pub items: ThinVec<Box<ForeignItem>>,
 }
 
+/// A C/C++ source import produced by the `clang!` builtin macro.
+///
+/// Carries foreign function declarations (handled exactly like the items of an
+/// `extern` block, so name resolution / typeck / codegen of the *declarations*
+/// are reused unchanged) plus the path to a C/C++ source file. The codegen
+/// backend compiles `source` via clang to LLVM bitcode and links it into the
+/// current module, so the declared symbols resolve to the C/C++ definitions.
+#[derive(Clone, Encodable, Decodable, Debug, Walkable)]
+pub struct ClangImport {
+    /// Path to the C/C++ source file, as written in the macro.
+    pub source: Symbol,
+    /// The declarations exposed to Rust, reusing `ForeignMod`.
+    pub fmod: ForeignMod,
+}
+
 #[derive(Clone, Encodable, Decodable, Debug, Walkable)]
 pub struct EnumDef {
     pub variants: ThinVec<Variant>,
@@ -3711,6 +3726,7 @@ impl Item {
             | ItemKind::Mod(..)
             | ItemKind::ForeignMod(_)
             | ItemKind::GlobalAsm(_)
+            | ItemKind::ClangImport(_)
             | ItemKind::MacCall(_)
             | ItemKind::Delegation(_)
             | ItemKind::DelegationMac(_)
@@ -4096,6 +4112,10 @@ pub enum ItemKind {
     ForeignMod(ForeignMod),
     /// Module-level inline assembly (from `global_asm!()`).
     GlobalAsm(Box<InlineAsm>),
+    /// A C/C++ source import (from `clang!()`).
+    ///
+    /// E.g. `clang! { source: "add.cpp"; fn cpp_add(a: i32, b: i32) -> i32; }`.
+    ClangImport(Box<ClangImport>),
     /// A type alias (`type`).
     ///
     /// E.g., `type Foo = Bar<u8>;`.
@@ -4161,6 +4181,7 @@ impl ItemKind {
             ItemKind::Use(_)
             | ItemKind::ForeignMod(_)
             | ItemKind::GlobalAsm(_)
+            | ItemKind::ClangImport(_)
             | ItemKind::Impl(_)
             | ItemKind::MacCall(_)
             | ItemKind::DelegationMac(_) => None,
@@ -4173,7 +4194,7 @@ impl ItemKind {
         match self {
             Use(..) | Static(..) | Const(..) | ConstBlock(..) | Fn(..) | Mod(..)
             | GlobalAsm(..) | TyAlias(..) | Struct(..) | Union(..) | Trait(..) | TraitAlias(..)
-            | MacroDef(..) | Delegation(..) | DelegationMac(..) => "a",
+            | MacroDef(..) | Delegation(..) | DelegationMac(..) | ClangImport(..) => "a",
             ExternCrate(..) | ForeignMod(..) | MacCall(..) | Enum(..) | Impl { .. } => "an",
         }
     }
@@ -4189,6 +4210,7 @@ impl ItemKind {
             ItemKind::Mod(..) => "module",
             ItemKind::ForeignMod(..) => "extern block",
             ItemKind::GlobalAsm(..) => "global asm item",
+            ItemKind::ClangImport(..) => "clang import",
             ItemKind::TyAlias(..) => "type alias",
             ItemKind::Enum(..) => "enum",
             ItemKind::Struct(..) => "struct",

@@ -51,6 +51,24 @@ pub macro global_asm("assembly template", $(operands,)* $(options($(option),*))?
     /* compiler built-in */
 }
 
+/// Imports a C/C++ source file, compiling it via clang and linking the result
+/// into the current crate.
+///
+/// ```ignore (experimental, requires a matching clang)
+/// core::arch::clang! {
+///     source: "add.cpp";
+///     fn cpp_add(a: i32, b: i32) -> i32;
+/// }
+/// ```
+///
+/// The declared functions are plain foreign items: calling them is `unsafe`, and
+/// it is the caller's responsibility to match the real C/C++ signatures.
+#[unstable(feature = "clang_import", issue = "none")]
+#[rustc_builtin_macro]
+pub macro clang($($tt:tt)*) {
+    /* compiler built-in */
+}
+
 /// Compiles to a target-specific software breakpoint instruction or equivalent.
 ///
 /// This will typically abort the program. It may result in a core dump, and/or the system logging
