@@ -179,6 +179,9 @@ impl Target {
             ast::ItemKind::Fn { .. } => Target::Fn,
             ast::ItemKind::Mod(..) => Target::Mod,
             ast::ItemKind::ForeignMod { .. } => Target::ForeignMod,
+            // A `clang!` import behaves like an extern block for attribute
+            // checking purposes.
+            ast::ItemKind::ClangImport(..) => Target::ForeignMod,
             ast::ItemKind::GlobalAsm { .. } => Target::GlobalAsm,
             ast::ItemKind::TyAlias(..) => Target::TyAlias,
             ast::ItemKind::Enum(..) => Target::Enum,

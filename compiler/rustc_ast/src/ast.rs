@@ -4244,6 +4244,7 @@ impl ItemKind {
             | Self::Mod(..)
             | Self::ForeignMod(..)
             | Self::GlobalAsm(..)
+            | Self::ClangImport(..)
             | Self::MacCall(..)
             | Self::MacroDef(..)
             | Self::Delegation(..)

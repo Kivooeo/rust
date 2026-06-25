@@ -578,6 +578,7 @@ impl<'v> ast_visit::Visitor<'v> for StatCollector<'v> {
                 Mod,
                 ForeignMod,
                 GlobalAsm,
+                ClangImport,
                 TyAlias,
                 Enum,
                 Struct,

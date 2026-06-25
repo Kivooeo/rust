@@ -422,6 +422,7 @@ macro_rules! common_visitor_and_walkers {
             BoundConstness,
             BoundPolarity,
             ByRef,
+            ClangImport,
             Closure,
             Const,
             ConstBlockItem,

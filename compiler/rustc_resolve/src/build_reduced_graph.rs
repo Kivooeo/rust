@@ -977,7 +977,7 @@ impl<'a, 'ra, 'tcx> DefCollector<'a, 'ra, 'tcx> {
             // handled by the visitor walking into them, exactly like an extern
             // block), but we record `source` so the codegen backend can compile
             // and link the C/C++ file into the current module.
-            ItemKind::ClangImport(clang_import) => {
+            ItemKind::ClangImport(ref clang_import) => {
                 self.r.clang_sources.push(clang_import.source);
             }
 
