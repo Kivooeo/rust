@@ -174,6 +174,39 @@ pub(crate) fn compile_codegen_unit(
             }
         }
 
+        // === PoC: clang IR injection ===
+        // If `RUSTC_CLANG_BC` points at one or more `;`-separated LLVM bitcode
+        // files (produced by `clang -emit-llvm -c foo.cpp -o foo.bc`), parse and
+        // link them straight into this codegen unit's module. This stands in for
+        // the side-channel that a future `clang_include!` builtin macro would
+        // populate. We only inject once, into the first CGU, to avoid duplicate
+        // symbol definitions across codegen units.
+        if let Ok(bc_list) = std::env::var("RUSTC_CLANG_BC") {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static INJECTED: AtomicBool = AtomicBool::new(false);
+            if !INJECTED.swap(true, Ordering::SeqCst) {
+                let linker = unsafe { llvm::LLVMRustLinkerNew(llvm_module.llmod()) };
+                for path in bc_list.split(';').filter(|p| !p.is_empty()) {
+                    let data = std::fs::read(path)
+                        .unwrap_or_else(|e| panic!("RUSTC_CLANG_BC: cannot read {path}: {e}"));
+                    let ok = unsafe {
+                        llvm::LLVMRustLinkerAdd(
+                            linker,
+                            data.as_ptr() as *const libc::c_char,
+                            data.len(),
+                        )
+                    };
+                    if !ok {
+                        unsafe { llvm::LLVMRustLinkerFree(linker) };
+                        panic!("RUSTC_CLANG_BC: failed to link bitcode from {path}");
+                    }
+                    eprintln!("[clang-ir-poc] linked {path} into CGU `{cgu_name}`");
+                }
+                unsafe { llvm::LLVMRustLinkerFree(linker) };
+            }
+        }
+        // === end PoC ===
+
         ModuleCodegen::new_regular(cgu_name.to_string(), llvm_module)
     }
 
